@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispersion · Cynthia O'Neill</title>
+<meta name="description" content="Dispersion: an interactive lawn from the Dandelion Rebellion series by Cynthia O'Neill. Click the lawn, or blow into your microphone, to spread the seeds.">
+<style>
+  :root {
+    --ink: #2f3a2a;
+    --ink-soft: rgba(47, 58, 42, 0.72);
+    --paper: rgba(250, 248, 240, 0.82);
+    --accent: #e8b62a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e9eee0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; touch-action: manipulation; }
+
+  .overlay { position: fixed; inset: 0; pointer-events: none; }
+  .overlay a, .overlay button { pointer-events: auto; }
+
+  header {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 34px 20px 0; gap: 16px; text-align: center;
+  }
+  .name { font-size: clamp(28px, 4.2vw, 48px); letter-spacing: 0.03em; font-weight: 400; margin: 0; }
+  .tagline {
+    margin: 8px 0 0; font-style: italic; font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(15px, 1.6vw, 19px); color: var(--ink-soft); letter-spacing: 0.01em;
+  }
+  nav { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  nav a {
+    pointer-events: auto; color: var(--ink); text-decoration: none; font-size: 15px;
+    background: var(--paper); border: 1px solid rgba(47,58,42,0.35);
+    border-radius: 999px; padding: 8px 18px; backdrop-filter: blur(4px);
+    transition: background 0.2s, color 0.2s;
+  }
+  nav a:hover, nav a:focus-visible { background: var(--ink); color: #faf8f0; outline: none; }
+
+  .hint {
+    position: absolute; left: 50%; top: 38%; transform: translateX(-50%);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px; letter-spacing: 0.08em; color: var(--ink-soft);
+    text-align: center; transition: opacity 1.2s ease; white-space: nowrap;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .controls {
+    position: absolute; left: 28px; bottom: 24px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  button {
+    font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--paper); border: 1px solid rgba(47,58,42,0.35);
+    border-radius: 999px; padding: 9px 16px; cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  button:hover, button:focus-visible { border-color: var(--ink); outline: none; }
+  button[aria-pressed="true"] { background: var(--ink); color: #faf8f0; }
+  .meter { width: 70px; height: 6px; border-radius: 3px; background: rgba(47,58,42,0.15); overflow: hidden; display: none; }
+  .meter span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }
+  .status { font-size: 13px; color: var(--ink-soft); }
+
+  .caption {
+    position: absolute; right: 28px; bottom: 24px; text-align: right;
+    font-size: 13px; line-height: 1.45; color: var(--ink-soft);
+    background: var(--paper); padding: 8px 12px; border-radius: 6px;
+  }
+  .caption em { color: var(--ink); font-style: italic; }
+  .enter {
+    display: inline-block; margin-top: 6px; color: var(--ink); font-size: 15px;
+    text-decoration: none; border-bottom: 1px solid var(--ink);
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 640px) {
+    header { padding: 22px 14px 0; gap: 12px; }
+    nav a { font-size: 14px; padding: 7px 13px; }
+    .controls { left: 18px; bottom: 18px; }
+    .caption { right: 18px; bottom: 70px; font-size: 12px; }
+    .hint { font-size: 12px; white-space: normal; width: 80%; }
+  }
+</style>
+</head>
+<body>
+  <a class="sr-only" href="WORK_URL">Skip to portfolio</a>
+
+  <canvas id="lawn" role="img"
+    aria-label="An animated lawn of grass, broad dandelion leaves, yellow dandelion flowers and white seed heads swaying in the wind. Clicking or blowing into the microphone scatters seeds, which land and sprout into new dandelions."></canvas>
+
+  <div class="overlay">
+    <header>
+      <div>
+        <h1 class="name">Cynthia O'Neill</h1>
+        <p class="tagline">Making room for what grows differently</p>
+      </div>
+      <nav aria-label="Site">
+        <a href="ABOUT_URL">About</a>
+        <a href="WORK_URL">Work</a>
+        <a href="SCHOLARSHIP_URL">Scholarship</a>
+        <a href="CV_URL">CV</a>
+        <a href="CONTACT_URL">Contact</a>
+      </nav>
+    </header>
+
+    <div class="hint" id="hint">click the lawn &nbsp;·&nbsp; or blow to spread the seeds</div>
+
+    <div class="controls">
+      <button id="micBtn" aria-pressed="false">🎤 Blow into the mic</button>
+      <button id="gustBtn" title="Shortcut: space bar">Send a breeze</button>
+      <div class="meter" id="meter" aria-hidden="true"><span id="meterFill"></span></div>
+      <span class="status" id="status" role="status" aria-live="polite"></span>
+    </div>
+
+    <div class="caption">
+      <em>Dispersion</em>, from the Dandelion Rebellion series<br>
+      Interactive web work, 2026
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- settings you can tweak ----------
+  const CONFIG = {
+    maxDandelions: 90,        // population cap so the lawn never overloads
+    seedsPerHead: 44,         // filaments on each white seed head
+    grassDensity: 0.32,       // blades per horizontal pixel
+    bloomTime: [9, 16],       // seconds a yellow flower stays open (min, max)
+    budTime: [4, 7],          // seconds a new sprout takes to bloom
+    bareLifetime: 22,         // seconds an empty stalk lingers before fading
+    clickRadius: 240,         // how far a click's "breath" reaches (px)
+    micSensitivity: 1.0,      // raise if blowing doesn't register, lower if too touchy
+  };
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const MOTION = reduceMotion ? 0.35 : 1;
+
+  // ---------- palette ----------
+  const C = {
+    skyTop: "#cfe0e4", skyMid: "#e4ece2", groundTop: "#cddcb5", groundBottom: "#9fbe7c",
+    grass: ["#6d9a46", "#7fae52", "#5c8a3a", "#8dbb5f", "#4f7d33"],
+    leaf: ["#4e8a37", "#5f9a43", "#6aa64b", "#447a30"],
+    leafVein: "rgba(225, 240, 200, 0.55)",
+    stem: "#7a9f4a",
+    petal: "#f4c531", petalInner: "#e8a91e", disk: "#d9951a",
+    bud: "#6f9a3f", sepal: "#557f30",
+    seedStroke: "rgba(255,255,255,0.95)", seedShadow: "rgba(90,100,80,0.35)",
+    achene: "#8a7a5a",
+  };
+
+  // ---------- canvas ----------
+  const canvas = document.getElementById("lawn");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, DPR = 1, groundTop = 0;
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[(Math.random() * arr.length) | 0];
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  // depth scale: things lower on screen are "closer" and larger
+  const depthScale = y => 0.55 + 0.65 * clamp((y - groundTop) / (H - groundTop), 0, 1);
+
+  // ---------- scene ----------
+  let scene = [];   // grass blades, rosettes and dandelions, kept sorted by y (back to front)
+  let seeds = [];   // flying seeds
+  let time = 0;
+  let gust = 0;            // current gust strength (0..~1.5)
+  let gustDir = 1;         // +1 blows to the right
+  let micLevel = 0;
+
+  function insertSorted(obj) {
+    let lo = 0, hi = scene.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (scene[m].y < obj.y) lo = m + 1; else hi = m; }
+    scene.splice(lo, 0, obj);
+  }
+
+  // A shared little spring so everything sways and wobbles
+  function makeSpring(stiff, damp) { return { a: 0, v: 0, k: stiff, d: damp }; }
+  function stepSpring(s, target, dt) {
+    const acc = s.k * (target - s.a) - s.d * s.v;
+    s.v += acc * dt; s.a += s.v * dt;
+  }
+
+  function makeBlade(x, y) {
+    const sc = depthScale(y);
+    return {
+      type: "grass", x, y, sc,
+      h: rand(26, 62) * sc, w: rand(2.2, 4) * sc,
+      lean: rand(-0.25, 0.25), color: pick(C.grass),
+      flex: rand(0.8, 1.3), phase: rand(0, Math.PI * 2),
+      spring: makeSpring(rand(28, 40), rand(4, 6)),
+    };
+  }
+
+  function makeLeaves(sc, count) {
+    const leaves = [];
+    for (let i = 0; i < count; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const spread = rand(0.15, 1.15);           // 0 = straight up, ~1.4 = flat
+      leaves.push({
+        ang: -Math.PI / 2 + side * spread,
+        len: rand(38, 70) * sc, wid: rand(7, 11) * sc,
+        teeth: (3 + Math.random() * 3) | 0,
+        color: pick(C.leaf), phase: rand(0, 6),
+      });
+    }
+    // draw upright leaves last so the flat ones sit behind
+    leaves.sort((a, b) => Math.abs(b.ang + Math.PI / 2) - Math.abs(a.ang + Math.PI / 2));
+    return leaves;
+  }
+
+  function makeRosette(x, y) {
+    const sc = depthScale(y);
+    return { type: "rosette", x, y, sc, leaves: makeLeaves(sc, (4 + Math.random() * 4) | 0),
+             spring: makeSpring(20, 5), grow: 1 };
+  }
+
+  function makeSeedAngles(n) {
+    const arr = [];
+    for (let i = 0; i < n; i++) {
+      // fibonacci-ish spread on a sphere, flattened to 2D
+      const a = i * 2.39996 + rand(-0.08, 0.08);
+      const r = 0.55 + 0.45 * Math.sqrt((i + 0.5) / n);
+      arr.push({ a, r });
+    }
+    return arr;
+  }
+
+  // stage: "bud" -> "bloom" -> "seed" -> "bare"
+  function makeDandelion(x, y, stage, sprout = false) {
+    const sc = depthScale(y);
+    const d = {
+      type: "dandelion", x, y, sc, stage,
+      stemH: rand(70, 135) * sc, headR: rand(13, 17) * sc,
+      leaves: makeLeaves(sc, (3 + Math.random() * 4) | 0),
+      spring: makeSpring(rand(14, 22), rand(2.6, 3.6)),
+      flex: rand(0.8, 1.2), phase: rand(0, 6),
+      timer: 0, grow: sprout ? 0 : 1,
+      budFor: rand(...CONFIG.budTime), bloomFor: rand(...CONFIG.bloomTime),
+      seeds: null, alpha: 1,
+    };
+    if (stage === "seed") d.seeds = makeSeedAngles(CONFIG.seedsPerHead);
+    return d;
+  }
+
+  function countDandelions() { let n = 0; for (const o of scene) if (o.type === "dandelion") n++; return n; }
+
+  function buildScene() {
+    scene = []; seeds = [];
+    const blades = Math.floor(W * CONFIG.grassDensity * (reduceMotion ? 0.7 : 1));
+    for (let i = 0; i < blades; i++) insertSorted(makeBlade(rand(-10, W + 10), rand(groundTop, H + 8)));
+
+    const rosettes = Math.max(6, Math.floor(W / 140));
+    for (let i = 0; i < rosettes; i++) insertSorted(makeRosette(rand(20, W - 20), rand(groundTop + 10, H - 10)));
+
+    const flowers = Math.max(10, Math.floor(W / 70));
+    for (let i = 0; i < flowers; i++) {
+      const r = Math.random();
+      const stage = r < 0.5 ? "seed" : r < 0.88 ? "bloom" : "bud";
+      const d = makeDandelion(rand(30, W - 30), rand(groundTop + 20, H - 6), stage);
+      d.timer = rand(0, 6);
+      insertSorted(d);
+    }
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    groundTop = H * (W < 640 ? 0.58 : 0.55);
+    buildScene();
+  }
+
+  // ---------- wind ----------
+  function breeze(x) {
+    return (0.07 * Math.sin(time * 0.55 + x * 0.0045) + 0.035 * Math.sin(time * 1.6 + x * 0.013)) * MOTION;
+  }
+
+  // ---------- seeds ----------
+  function releaseSeed(d, s, push) {
+    // world position of this filament tip
+    const head = headPos(d);
+    const ang = s.a;
+    const r = d.headR * s.r;
+    const px = head.x + Math.cos(ang) * r, py = head.y + Math.sin(ang) * r * 0.9;
+    const out = rand(1.4, 3.4);
+    seeds.push({
+      x: px, y: py,
+      vx: Math.cos(ang) * out + push.x * rand(0.6, 1.4),
+      vy: Math.sin(ang) * out * 0.6 + push.y * rand(0.6, 1.4) - rand(2.2, 4.6),
+      rot: 0, sc: d.sc, bounces: 0,
+      landY: rand(groundTop + 8, H - 4),
+      flutter: rand(0, 6), life: 0, landed: false, fade: 1,
+    });
+  }
+
+  function headPos(d) {
+    const g = d.grow;
+    const ang = d.spring.a;
+    const h = d.stemH * (0.35 + 0.65 * g);
+    return { x: d.x + Math.sin(ang) * h, y: d.y - Math.cos(ang) * h };
+  }
+
+  // ---------- interaction ----------
+  let hintHidden = false;
+  function hideHint() { if (!hintHidden) { document.getElementById("hint").classList.add("hidden"); hintHidden = true; } }
+
+  function puff(cx, cy, strength = 1) {
+    hideHint();
+    const R = CONFIG.clickRadius * (W < 640 ? 0.8 : 1);
+    for (const o of scene) {
+      const tx = o.type === "dandelion" ? headPos(o).x : o.x;
+      const ty = o.type === "dandelion" ? headPos(o).y : o.y - 20;
+      const dx = tx - cx, dy = ty - cy, dist = Math.hypot(dx, dy);
+      if (dist > R) continue;
+      const f = (1 - dist / R) * strength;
+      const dir = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+      o.spring.v += dir * f * (o.type === "grass" ? 4.5 : 3.2) * MOTION;
+
+      if (o.type === "dandelion" && o.stage === "seed" && o.seeds.length) {
+        const take = Math.ceil(o.seeds.length * clamp(f * 1.3, 0.15, 1));
+        const push = { x: dir * 2.2 * f, y: -1.5 * f };
+        for (let i = 0; i < take && o.seeds.length; i++) {
+          const idx = (Math.random() * o.seeds.length) | 0;
+          releaseSeed(o, o.seeds.splice(idx, 1)[0], push);
+        }
+        if (!o.seeds.length) { o.stage = "bare"; o.timer = 0; }
+      }
+    }
+  }
+
+  function startGust(power = 1, dir = 1) {
+    hideHint();
+    gust = Math.max(gust, power); gustDir = dir;
+  }
+
+  canvas.addEventListener("pointerdown", e => {
+    const rect = canvas.getBoundingClientRect();
+    puff(e.clientX - rect.left, e.clientY - rect.top, 1);
+  });
+  document.getElementById("gustBtn").addEventListener("click", () => startGust(1.1, Math.random() < 0.5 ? 1 : -1));
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space" && e.target === document.body) { e.preventDefault(); startGust(1.1, 1); }
+  });
+
+  // ---------- microphone ----------
+  const micBtn = document.getElementById("micBtn");
+  const statusEl = document.getElementById("status");
+  const meter = document.getElementById("meter"), meterFill = document.getElementById("meterFill");
+  let audio = null;
+
+  async function toggleMic() {
+    if (audio) { stopMic(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = "Microphone isn't available in this browser."; return;
+    }
+    try {
+      statusEl.textContent = "Listening… stay quiet for a moment.";
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ac.createMediaStreamSource(stream);
+      const an = ac.createAnalyser(); an.fftSize = 1024;
+      src.connect(an);
+      audio = { stream, ac, an, buf: new Float32Array(an.fftSize), ambient: 0, samples: 0, calibrating: true, started: performance.now() };
+      micBtn.setAttribute("aria-pressed", "true"); micBtn.textContent = "🎤 Mic on — blow!";
+      meter.style.display = "block";
+    } catch (err) {
+      statusEl.textContent = "Mic permission was declined. Clicking works too!";
+    }
+  }
+  function stopMic() {
+    if (!audio) return;
+    audio.stream.getTracks().forEach(t => t.stop()); audio.ac.close();
+    audio = null; micLevel = 0;
+    micBtn.setAttribute("aria-pressed", "false"); micBtn.textContent = "🎤 Blow into the mic";
+    meter.style.display = "none"; statusEl.textContent = "";
+  }
+  micBtn.addEventListener("click", toggleMic);
+
+  function readMic() {
+    if (!audio) return;
+    audio.an.getFloatTimeDomainData(audio.buf);
+    let sum = 0;
+    for (let i = 0; i < audio.buf.length; i++) sum += audio.buf[i] * audio.buf[i];
+    const rms = Math.sqrt(sum / audio.buf.length);
+
+    if (audio.calibrating) {
+      audio.ambient += rms; audio.samples++;
+      if (performance.now() - audio.started > 900) {
+        audio.ambient /= audio.samples; audio.calibrating = false;
+        statusEl.textContent = "Ready. Blow gently, or hard!";
+        setTimeout(() => { if (audio) statusEl.textContent = ""; }, 2500);
+      }
+      return;
+    }
+    // breath is noisy and broadband: anything well above the room's hum counts
+    const floor = Math.max(0.02, audio.ambient * 2.5) / CONFIG.micSensitivity;
+    const level = clamp((rms - floor) / (floor * 6), 0, 1);
+    micLevel = micLevel * 0.7 + level * 0.3;
+    meterFill.style.width = (micLevel * 100).toFixed(0) + "%";
+    if (micLevel > 0.06) startGust(0.4 + micLevel * 1.4, 1);
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    time += dt;
+    readMic();
+    gust *= Math.pow(0.35, dt);         // gusts fade over ~1–2 s
+    if (gust < 0.01) gust = 0;
+    const gustForce = gust * gustDir * MOTION;
+
+    let alive = 0;
+    for (let i = scene.length - 1; i >= 0; i--) {
+      const o = scene[i];
+      const w = breeze(o.x) + gustForce * 0.45;
+      if (o.type === "grass") {
+        stepSpring(o.spring, (w + 0.02 * Math.sin(time * 2.3 + o.phase)) * o.flex * 2.2, dt);
+        continue;
+      }
+      if (o.type === "rosette") { stepSpring(o.spring, w * 0.6, dt); continue; }
+
+      // dandelion lifecycle
+      alive++;
+      o.timer += dt;
+      if (o.grow < 1) o.grow = Math.min(1, o.grow + dt / o.budFor);
+      stepSpring(o.spring, (w * 1.4 + 0.015 * Math.sin(time * 1.3 + o.phase)) * o.flex, dt);
+
+      if (o.stage === "bud" && o.grow >= 1 && o.timer > o.budFor) { o.stage = "bloom"; o.timer = 0; }
+      else if (o.stage === "bloom" && o.timer > o.bloomFor) { o.stage = "seed"; o.timer = 0; o.seeds = makeSeedAngles(CONFIG.seedsPerHead); }
+      else if (o.stage === "seed" && gust > 0.25) {
+        // strong wind (or breath) carries seeds away a few at a time
+        const chance = (gust - 0.2) * 3.5 * dt;
+        let n = Math.floor(chance * o.seeds.length * 0.25 + (Math.random() < chance ? 1 : 0));
+        while (n-- > 0 && o.seeds.length) {
+          const idx = (Math.random() * o.seeds.length) | 0;
+          releaseSeed(o, o.seeds.splice(idx, 1)[0], { x: gustDir * (1.5 + gust * 2.5), y: -1.2 * gust });
+        }
+        if (!o.seeds.length) { o.stage = "bare"; o.timer = 0; }
+      } else if (o.stage === "bare" && o.timer > CONFIG.bareLifetime) {
+        o.alpha -= dt * 0.5;
+        if (o.alpha <= 0) scene.splice(i, 1);
+      }
+    }
+
+    // seeds in flight
+    const cap = CONFIG.maxDandelions;
+    for (let i = seeds.length - 1; i >= 0; i--) {
+      const s = seeds[i];
+      s.life += dt;
+      if (s.landed) { s.fade -= dt * 0.6; if (s.fade <= 0) seeds.splice(i, 1); continue; }
+
+      const f = 60 * dt; // normalise to ~60fps steps
+      const wind = breeze(s.x) * 1.6 + gustForce * 1.4;
+      s.vx += (wind * 0.18 + Math.sin(time * 3 + s.flutter) * 0.03) * f;
+      s.vy += (0.022 - gust * 0.05 * MOTION) * f;              // gentle gravity; gusts lift
+      s.vx *= Math.pow(0.985, f); s.vy *= Math.pow(0.982, f);
+      if (s.vy > 0.95) s.vy = 0.95;                             // pappus = parachute
+      s.x += s.vx * f; s.y += s.vy * f;
+      s.rot = clamp(s.vx * 0.25, -0.9, 0.9);
+
+      // bounce about the screen edges
+      if (s.x < 4) { s.x = 4; s.vx = Math.abs(s.vx) * 0.7; }
+      if (s.x > W - 4) { s.x = W - 4; s.vx = -Math.abs(s.vx) * 0.7; }
+      if (s.y < 150) { s.y = 150; s.vy = Math.abs(s.vy) * 0.6; }
+
+      // touch down on the lawn
+      if (s.y >= s.landY && s.vy > 0) {
+        if (s.bounces < 1 && s.vy > 0.7) { s.vy = -s.vy * 0.55; s.bounces++; continue; }
+        s.landed = true;
+        if (alive < cap && Math.random() < 0.75) {
+          const d = makeDandelion(clamp(s.x, 10, W - 10), s.landY, "bud", true);
+          d.budFor = rand(5, 16);   // stagger blooming so new flowers open gradually
+          insertSorted(d); alive++;
+          s.fade = 0.6;
+        }
+      }
+    }
+  }
+
+  // ---------- drawing ----------
+  function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, C.skyTop); g.addColorStop(groundTop / H * 0.9, C.skyMid);
+    g.addColorStop(groundTop / H, C.groundTop); g.addColorStop(1, C.groundBottom);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawBlade(b) {
+    const bend = b.spring.a * b.h + b.lean * b.h * 0.4;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.moveTo(b.x - b.w, b.y);
+    ctx.quadraticCurveTo(b.x - b.w * 0.3 + bend * 0.35, b.y - b.h * 0.55, b.x + bend, b.y - b.h);
+    ctx.quadraticCurveTo(b.x + b.w * 0.3 + bend * 0.35, b.y - b.h * 0.55, b.x + b.w, b.y);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // a toothed, back-pointing dandelion leaf ("lion's tooth")
+  function drawLeaf(x, y, leaf, sway, grow) {
+    const len = leaf.len * (0.3 + 0.7 * grow), wid = leaf.wid * (0.3 + 0.7 * grow);
+    const ang = leaf.ang + sway * 0.5 + Math.sin(time * 0.9 + leaf.phase) * 0.02 * MOTION;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang + Math.PI / 2);
+    const N = 26, top = [], bot = [];
+    for (let i = 0; i <= N; i++) {
+      const s = i / N;
+      const base = Math.pow(Math.sin(Math.PI * Math.min(s * 1.05, 1)), 0.75) * (1 - s * 0.35);
+      const tooth = 1 - ((s * leaf.teeth) % 1);              // sawtooth leaning toward the base
+      const lobe = s > 0.12 && s < 0.88 ? 0.55 * tooth : 0;
+      const w = wid * base * (0.75 + lobe);
+      top.push([w, -s * len]); bot.push([-w, -s * len]);
+    }
+    ctx.fillStyle = leaf.color;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    for (const p of top) ctx.lineTo(p[0], p[1]);
+    for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = C.leafVein; ctx.lineWidth = Math.max(0.6, wid * 0.12);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -len * 0.92); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRosette(r) {
+    for (const lf of r.leaves) drawLeaf(r.x, r.y, lf, r.spring.a, 1);
+  }
+
+  function drawDandelion(d) {
+    ctx.globalAlpha = d.alpha;
+    for (const lf of d.leaves) drawLeaf(d.x, d.y, lf, d.spring.a * 0.4, d.grow);
+
+    const head = headPos(d);
+    // stem
+    const midX = d.x + (head.x - d.x) * 0.35, midY = d.y + (head.y - d.y) * 0.5;
+    ctx.strokeStyle = C.stem; ctx.lineWidth = Math.max(1.4, 2.6 * d.sc); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.quadraticCurveTo(midX, midY, head.x, head.y); ctx.stroke();
+
+    const R = d.headR * (0.4 + 0.6 * d.grow);
+    if (d.stage === "bud") drawBud(head.x, head.y, R, d.spring.a);
+    else if (d.stage === "bloom") drawBloom(head.x, head.y, R, d);
+    else if (d.stage === "seed") drawSeedHead(head.x, head.y, R, d);
+    else drawBare(head.x, head.y, R);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBud(x, y, R, a) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+    ctx.fillStyle = C.bud;
+    ctx.beginPath(); ctx.ellipse(0, -R * 0.45, R * 0.38, R * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.petal;
+    ctx.beginPath(); ctx.ellipse(0, -R * 0.95, R * 0.16, R * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.sepal; ctx.lineWidth = 1.2;
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(s * R * 0.5, R * 0.05, s * R * 0.55, R * 0.35); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawBloom(x, y, R, d) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(d.spring.a * 0.6);
+    const rings = [[1.0, 24, C.petal], [0.72, 18, C.petal], [0.46, 12, C.petalInner]];
+    for (const [rr, n, col] of rings) {
+      ctx.fillStyle = col;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + rr * 3;
+        ctx.save(); ctx.rotate(a);
+        ctx.beginPath(); ctx.ellipse(R * rr * 0.55, 0, R * rr * 0.5, R * 0.085, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.fillStyle = C.disk; ctx.beginPath(); ctx.arc(0, 0, R * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPappus(x, y, size, rot) {
+    // tiny umbrella of filaments
+    for (let k = -3; k <= 3; k++) {
+      const a = -Math.PI / 2 + rot + k * 0.36;
+      ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * size, y + Math.sin(a) * size);
+    }
+  }
+
+  function drawSeedHead(x, y, R, d) {
+    const big = R * 1.25;
+    ctx.save(); ctx.translate(x, y);
+    // soft halo so the white reads against sky and grass
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath(); ctx.arc(0, 0, big * 1.05, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = "round";
+    // shadow pass, then white pass
+    for (const [col, off] of [[C.seedShadow, 0.6], [C.seedStroke, 0]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, 0.9 * d.sc);
+      ctx.beginPath();
+      for (const s of d.seeds) {
+        const ex = Math.cos(s.a) * big * s.r + off, ey = Math.sin(s.a) * big * s.r * 0.92 + off;
+        ctx.moveTo(off, off); ctx.lineTo(ex, ey);
+        drawPappus(ex, ey, 3.2 * d.sc, s.a + Math.PI / 2);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = C.achene; ctx.beginPath(); ctx.arc(0, 0, R * 0.14, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBare(x, y, R) {
+    ctx.fillStyle = "#a9b48a";
+    ctx.beginPath(); ctx.arc(x, y, R * 0.18, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawSeeds() {
+    ctx.lineCap = "round";
+    for (const s of seeds) {
+      const size = 5.5 * (0.7 + s.sc * 0.5);
+      ctx.globalAlpha = clamp(s.fade, 0, 1);
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.rot);
+      // achene + beak
+      ctx.strokeStyle = C.achene; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(0, size * 1.6); ctx.lineTo(0, size * 1.05); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(0, size * 1.05); ctx.lineTo(0, 0);
+      drawPappus(0, 0, size, 0); ctx.stroke();
+      ctx.strokeStyle = C.seedShadow; ctx.lineWidth = 0.6;
+      ctx.beginPath(); drawPappus(0.5, 0.6, size, 0); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    drawBackground();
+    for (const o of scene) {
+      if (o.type === "grass") drawBlade(o);
+      else if (o.type === "rosette") drawRosette(o);
+      else drawDandelion(o);
+    }
+    drawSeeds();
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener("resize", () => { clearTimeout(resize._t); resize._t = setTimeout(resize, 150); });
+  document.addEventListener("visibilitychange", () => { last = performance.now(); });
+  resize();
+  setTimeout(hideHint, 9000);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
